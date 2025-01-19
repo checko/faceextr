@@ -74,29 +74,38 @@ def extract_face_frame(video_path, start_minutes=10, frame_skip=10):
     print(f"Starting from frame {start_frame} ({start_minutes} minutes in)")
     print(f"Processing every {frame_skip}th frame...")
     print(f"Output will be saved as: {output_path}")
-    print("Press 'q' to quit, 's' to skip to next frame")
+    print("Press 'q' to quit, 's' to skip to next frame, 'p' to pause/unpause")
     
     frame_count = start_frame
+    paused = False
     while True:
-        ret, frame = video.read()
-        if not ret:
-            break
+        if not paused:
+            ret, frame = video.read()
+            if not ret:
+                break
+                
+            frame_count += 1
             
-        frame_count += 1
+            # Skip frames according to frame_skip parameter
+            if (frame_count - start_frame) % frame_skip != 0:
+                continue
         
-        # Skip frames according to frame_skip parameter
-        if (frame_count - start_frame) % frame_skip != 0:
-            continue
-            
-        # Replace face detection code
+        # Process frame (whether paused or not)
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = face_detection.process(frame_rgb)
         
         display_frame = frame.copy()
+        
+        # Add pause indicator
+        if paused:
+            cv2.putText(display_frame, "PAUSED", (10, 60), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        
         if results.detections:
             for detection in results.detections:
-                # Get bounding box coordinates
+                # Get bounding box coordinates and detection confidence
                 bbox = detection.location_data.relative_bounding_box
+                detection_confidence = detection.score[0]  # Overall face detection confidence
                 x = int(bbox.xmin * frame_width)
                 y = int(bbox.ymin * frame_height)
                 w = int(bbox.width * frame_width)
@@ -127,8 +136,8 @@ def extract_face_frame(video_path, start_minutes=10, frame_skip=10):
                 cv2.putText(display_frame, ratio_text, (x, y-10), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                 
-                # Check if face occupies approximately half the frame AND both eyes are visible
-                if 0.03 <= face_ratio and left_eye.score > 0.6 and right_eye.score > 0.6:
+                # Check if face occupies approximately half the frame AND detection confidence is high
+                if 0.03 <= face_ratio and detection_confidence > 0.6:
                     # Save the frame as JPEG
                     cv2.imwrite(output_path, frame)
                     print(f"\nSuccessfully saved frame {frame_count} to {output_path}")
@@ -144,6 +153,18 @@ def extract_face_frame(video_path, start_minutes=10, frame_skip=10):
                     video.release()
                     cv2.destroyAllWindows()
                     return True
+                
+                # If paused, display detailed detection info
+                if paused:
+                    print("\nDetection Details:")
+                    print(f"Face ratio: {face_ratio:.2%}")
+                    print(f"Detection confidence: {detection_confidence:.2%}")
+                    print(f"Face bounding box: x={x}, y={y}, w={w}, h={h}")
+                    print(f"Left eye position: ({left_eye_x}, {left_eye_y})")
+                    print(f"Right eye position: ({right_eye_x}, {right_eye_y})")
+                    print(f"Current frame: {frame_count}/{total_frames}")
+                    print(f"Time position: {frame_count/fps/60:.2f} minutes")
+                    print("Press 'p' to resume processing")
         
         # Display frame number and progress
         current_minute = frame_count/fps/60
@@ -156,12 +177,18 @@ def extract_face_frame(video_path, start_minutes=10, frame_skip=10):
         cv2.imshow('Processing Frame', display_frame)
         
         # Handle key presses
-        key = cv2.waitKey(1) & 0xFF
+        key = cv2.waitKey(1 if not paused else 0) & 0xFF
         if key == ord('q'):
             print("\nProcessing cancelled by user")
             break
         elif key == ord('s'):
             continue
+        elif key == ord('p'):
+            paused = not paused
+            if paused:
+                print("\n=== Processing PAUSED ===")
+            else:
+                print("\n=== Processing RESUMED ===")
     
     video.release()
     cv2.destroyAllWindows()
