@@ -2,20 +2,39 @@ import cv2
 import os
 import argparse
 
-def extract_face_frame(video_path, output_path, start_minutes=10, frame_skip=10):
+def get_output_filename(input_path):
+    """
+    Generate output filename by changing the extension to .jpg
+    
+    Args:
+        input_path (str): Path to input video file
+    
+    Returns:
+        str: Output path with .jpg extension
+    """
+    # Get the directory and filename without extension
+    directory = os.path.dirname(input_path)
+    filename = os.path.splitext(os.path.basename(input_path))[0]
+    
+    # Create output path with .jpg extension
+    return os.path.join(directory, f"{filename}.jpg")
+
+def extract_face_frame(video_path, start_minutes=10, frame_skip=10):
     """
     Extract a frame from video where a face occupies approximately half the frame.
     Starts from specified number of minutes into the video.
     
     Args:
         video_path (str): Path to input video file
-        output_path (str): Path to save the output JPEG
         start_minutes (int): Minutes to skip from start of video
         frame_skip (int): Number of frames to skip between processing
     
     Returns:
         bool: True if successful, False otherwise
     """
+    # Generate output path from input filename
+    output_path = get_output_filename(video_path)
+    
     # Load the face detection classifier
     face_cascade = cv2.CascadeClassifier(
         cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
@@ -50,6 +69,7 @@ def extract_face_frame(video_path, output_path, start_minutes=10, frame_skip=10)
     print(f"Total frames: {total_frames}")
     print(f"Starting from frame {start_frame} ({start_minutes} minutes in)")
     print(f"Processing every {frame_skip}th frame...")
+    print(f"Output will be saved as: {output_path}")
     print("Press 'q' to quit, 's' to skip to next frame")
     
     frame_count = start_frame
@@ -134,9 +154,6 @@ def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Extract a frame with a face from a video file')
     parser.add_argument('input_video', help='Path to the input video file')
-    parser.add_argument('-o', '--output', 
-                        default='face_frame.jpg',
-                        help='Path for the output JPEG file (default: face_frame.jpg)')
     parser.add_argument('-s', '--skip', 
                         type=int,
                         default=10,
@@ -155,7 +172,7 @@ def main():
         return
     
     # Process the video
-    extract_face_frame(args.input_video, args.output, args.start_minutes, args.skip)
+    extract_face_frame(args.input_video, args.start_minutes, args.skip)
 
 if __name__ == "__main__":
     main()
