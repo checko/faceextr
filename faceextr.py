@@ -1,6 +1,7 @@
 import cv2
 import os
 import argparse
+import mediapipe as mp
 
 def get_output_filename(input_path):
     """
@@ -35,9 +36,12 @@ def extract_face_frame(video_path, start_minutes=10, frame_skip=10):
     # Generate output path from input filename
     output_path = get_output_filename(video_path)
     
-    # Load the face detection classifier
-    face_cascade = cv2.CascadeClassifier(
-        cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+    # Replace face cascade with MediaPipe Face Detection
+    mp_face_detection = mp.solutions.face_detection
+    mp_drawing = mp.solutions.drawing_utils
+    face_detection = mp_face_detection.FaceDetection(
+        model_selection=1,  # 1 for full range detection up to 5 meters
+        min_detection_confidence=0.7  # Increased confidence threshold
     )
     
     # Open the video file
@@ -84,48 +88,62 @@ def extract_face_frame(video_path, start_minutes=10, frame_skip=10):
         if (frame_count - start_frame) % frame_skip != 0:
             continue
             
-        # Convert frame to grayscale for face detection
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # Replace face detection code
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = face_detection.process(frame_rgb)
         
-        # Detect faces
-        faces = face_cascade.detectMultiScale(
-            gray,
-            scaleFactor=1.1,
-            minNeighbors=5,
-            minSize=(30, 30)
-        )
-        
-        # Draw rectangles around detected faces and show face ratio
         display_frame = frame.copy()
-        for (x, y, w, h) in faces:
-            face_area = w * h
-            face_ratio = face_area / frame_area
-            
-            # Draw rectangle around face
-            cv2.rectangle(display_frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-            
-            # Display face ratio
-            ratio_text = f"Face ratio: {face_ratio:.2%}"
-            cv2.putText(display_frame, ratio_text, (x, y-10), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-            
-            # Check if face occupies approximately half the frame (40-60% range)
-            if 0.2 <= face_ratio :
-                # Save the frame as JPEG
-                cv2.imwrite(output_path, frame)
-                print(f"\nSuccessfully saved frame {frame_count} to {output_path}")
-                print(f"Face ratio: {face_ratio:.2%}")
-                print(f"Time position: {frame_count/fps/60:.2f} minutes")
+        if results.detections:
+            for detection in results.detections:
+                # Get bounding box coordinates
+                bbox = detection.location_data.relative_bounding_box
+                x = int(bbox.xmin * frame_width)
+                y = int(bbox.ymin * frame_height)
+                w = int(bbox.width * frame_width)
+                h = int(bbox.height * frame_height)
                 
-                # Display "SAVED" on frame
-                cv2.putText(display_frame, "SAVED!", (10, 30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                cv2.imshow('Processing Frame', display_frame)
-                cv2.waitKey(1000)  # Show the saved frame for 1 second
+                face_area = w * h
+                face_ratio = face_area / frame_area
                 
-                video.release()
-                cv2.destroyAllWindows()
-                return True
+                # Check if both eyes are detected
+                left_eye = detection.location_data.relative_keypoints[0]  # Left eye keypoint
+                right_eye = detection.location_data.relative_keypoints[1]  # Right eye keypoint
+                
+                # Convert eye coordinates to pixel values
+                left_eye_x = int(left_eye.x * frame_width)
+                left_eye_y = int(left_eye.y * frame_height)
+                right_eye_x = int(right_eye.x * frame_width)
+                right_eye_y = int(right_eye.y * frame_height)
+                
+                # Draw eyes on frame
+                cv2.circle(display_frame, (left_eye_x, left_eye_y), 3, (0, 255, 255), -1)
+                cv2.circle(display_frame, (right_eye_x, right_eye_y), 3, (0, 255, 255), -1)
+                
+                # Draw rectangle around face
+                cv2.rectangle(display_frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                
+                # Display face ratio
+                ratio_text = f"Face ratio: {face_ratio:.2%}"
+                cv2.putText(display_frame, ratio_text, (x, y-10), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                
+                # Check if face occupies approximately half the frame AND both eyes are visible
+                if 0.03 <= face_ratio and left_eye.score > 0.6 and right_eye.score > 0.6:
+                    # Save the frame as JPEG
+                    cv2.imwrite(output_path, frame)
+                    print(f"\nSuccessfully saved frame {frame_count} to {output_path}")
+                    print(f"Face ratio: {face_ratio:.2%}")
+                    print(f"Time position: {frame_count/fps/60:.2f} minutes")
+                    
+                    # Display "SAVED" on frame
+                    cv2.putText(display_frame, "SAVED!", (10, 30), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                    cv2.imshow('Processing Frame', display_frame)
+                    cv2.waitKey(1000)  # Show the saved frame for 1 second
+                    
+                    video.release()
+                    cv2.destroyAllWindows()
+                    return True
         
         # Display frame number and progress
         current_minute = frame_count/fps/60
